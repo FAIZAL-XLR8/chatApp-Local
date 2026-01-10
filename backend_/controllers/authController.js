@@ -5,7 +5,7 @@ const twilioService = require('../service/twilioService');
 const response = require('../utils/responseHandler');
  const generateJWT = require('../utils/generateJWT');
 const { uploadFileToCloudinary } = require('../config/cloudinary');
-const Conversation = require('../models/conversation');
+const Conversation = require ("../models/Conversation");
 const sendOtp = async (req, res) =>{
     const {phoneNumber, phoneSuffix, email} = req.body;
     const otp = otpGeneraete();
