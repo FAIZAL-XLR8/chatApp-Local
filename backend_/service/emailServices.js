@@ -1,5 +1,5 @@
 const nodemailer = require('nodemailer');
-
+const validator = require('validator');
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
@@ -15,6 +15,12 @@ transporter.verify((error, success) => {
     }
 });
 const sendOtpToEmail = async (email, otp) => {
+     if (!validator.isEmail(email)) {
+      return { 
+        success: false, 
+        error: 'Invalid email format. Please check and try again.' 
+      };
+    }
       const html = `
     <div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
       <h2 style="color: #075e54;">🔐 WhatsApp Web Verification</h2>

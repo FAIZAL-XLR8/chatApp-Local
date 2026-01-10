@@ -1,9 +1,10 @@
 const otpGeneraete = require('../utils/otpGenerator');
 const User = require('../models/user');
-const {sendOtpToEmail} = require('../service/emailService');
+const {sendOtpToEmail} = require('../service/emailServices');
 const twilioService = require('../service/twilioService');
 const response = require('../utils/responseHandler');
  const generateJWT = require('../utils/generateJWT');
+const { uploadFileToCloudinary } = require('../config/cloudinary');
 const sendOtp = async (req, res) =>{
     const {phoneNumber, phoneSuffix, email} = req.body;
     const otp = otpGeneraete();
@@ -17,6 +18,7 @@ const sendOtp = async (req, res) =>{
             if(!user){
                 user = new User({email: email});
             }
+            //store otp in db and also its expiry
             user.emailOtp = otp;
             user.emailOtpExpiry = expiry;
             await user.save();
@@ -78,7 +80,7 @@ const verifyOtp = async (req, res) => {
             user.isVerified = true;
             await user.save();
         }
-        //now give jwt token after verification 
+        //abb  give jwt token after verification user ko
        const token = generateJWT(user?._id);
        res.cookie ("token", token, {
         httpOnly : true,
@@ -91,6 +93,39 @@ const verifyOtp = async (req, res) => {
     } catch (err) {
         console.error(err);
         return response(res, 500, "Server error");
+    }
+}
+
+const updateProfile = async (req, res) => {
+    // Implementation for updating user profile
+    const {userName, agreed, about} = req.body;
+    const userId = req.user.userId;
+    {
+        try {
+            const user = await User.findById(userId);
+            const file = req.file;
+            if (!user) {
+                return response(res, 404, "User not found");
+            }
+            if (file)
+            {
+                const uploadResult = await uploadFileToCloudinary(file);
+                user.profilePicture = uploadResult?.secure_url;
+                console.log("Profile picture updated:", user.profilePicture);
+            }else if(req.body.profilePicture){
+                user.profilePicture = req.body.profilePicture;
+            }
+            if (userName) user.userName = userName;
+            if (about) user.about = about;
+            if (agreed !== undefined) user.agreed = agreed;
+            await user.save();
+            return response(res, 200, "Profile updated successfully", {
+                user,
+            });
+        }catch (err) {
+        console.error(err);
+        return response(res, 500, "Server error");
+    }
     }
 }
 module.exports = {sendOtp, verifyOtp};

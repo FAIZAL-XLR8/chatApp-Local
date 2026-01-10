@@ -6,9 +6,19 @@ const dotenv = require('dotenv');
 const app = express();
 const connectDB = require("./config/dbConnect")
 const redisClient = require("./config/redis");
+const bodyParser = require('body-parser');
+const authRouter = require("./routes/authRoute");
+//Middlewares
 app.use(cors());
-app.use(cookieParser());
-app.use(express.json());
+app.use(cookieParser());// token to parse karega json data
+app.use(express.json()); //parses bddy ka content to json
+app.use(bodyParser.urlencoded({ extended: true }));
+
+//routes
+app.use("/api/auth", authRouter);
+
+
+
 const PORT = process.env.PORT;
 const initialiseConnections = async () =>{
     try {

@@ -1,4 +1,4 @@
-import { createClient } from 'redis';
+const { createClient } = require( 'redis');
 
 const redisClient = createClient({
     username: 'default',
@@ -9,7 +9,7 @@ const redisClient = createClient({
     }
 });
 
-client.on('error', err => console.log('Redis Client Error', err));
+redisClient.on('error', err => console.log('Redis Client Error', err));
 
 
 
