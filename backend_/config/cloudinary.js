@@ -35,5 +35,5 @@ const uploadFileToCloudinary = async (file) => {
     fs.unlink(file.path, () => {});
   }
 };
-const multerStorage = multer({ dest: 'uploads/' }).single('media');
-module.exports = { uploadFileToCloudinary, multerStorage };
+const multerMiddleware = multer({ dest: 'uploads/' }).single('media');
+module.exports = { uploadFileToCloudinary, multerMiddleware };

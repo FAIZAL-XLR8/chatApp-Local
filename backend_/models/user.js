@@ -42,7 +42,7 @@ const userSchema = new mongoose.Schema({
   },
   about: {
     type: String,
-    default: "Hey there! I am using WhatsApp Clone."
+    default: "Hey there! I am using ZenChat."
   },
   lastSeen: {
     type: Date,

@@ -5,6 +5,7 @@ const twilioService = require('../service/twilioService');
 const response = require('../utils/responseHandler');
  const generateJWT = require('../utils/generateJWT');
 const { uploadFileToCloudinary } = require('../config/cloudinary');
+const Conversation = require('../models/conversation');
 const sendOtp = async (req, res) =>{
     const {phoneNumber, phoneSuffix, email} = req.body;
     const otp = otpGeneraete();
@@ -61,7 +62,7 @@ const verifyOtp = async (req, res) => {
             user.emailOtp = null;
             user.emailOtpExpiry = null;
             await user.save();
-            return response(res, 200, "Email verified successfully");
+            console.log("OTP verified for email:", email);
 
         }
         else{
@@ -77,6 +78,7 @@ const verifyOtp = async (req, res) => {
             if (verificationResult.status !== "approved") {
                 return response(res, 400, "Invalid OTP");
             }
+            console.log("OTP verified for phone number:", fullPhoneNumber);
             user.isVerified = true;
             await user.save();
         }
@@ -86,6 +88,7 @@ const verifyOtp = async (req, res) => {
         httpOnly : true,
         maxAge : 7*24*60*60*1000, //7 days
        });
+       console.log("JWT token generated and set in cookies for user:", user?._id);
        return response(res, 200, "Otp  verified successfully", {
        });
       
@@ -119,6 +122,7 @@ const updateProfile = async (req, res) => {
             if (about) user.about = about;
             if (agreed !== undefined) user.agreed = agreed;
             await user.save();
+            console.log("User profile updated:", user);
             return response(res, 200, "Profile updated successfully", {
                 user,
             });
@@ -128,4 +132,59 @@ const updateProfile = async (req, res) => {
     }
     }
 }
-module.exports = {sendOtp, verifyOtp};
+const logout = (req, res)=>{
+    try{
+        res.cookie("token", "", {
+            httpOnly: true,
+            expires: new Date(0),
+        });
+        return response (res, 200, "Logged out successfully");
+    }catch(err){
+        console.error(err);
+        return response(res, 500, "Server error");
+    }
+}
+const checkAuthenticated = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const user = await User.findById(userId);
+        if (!user) {
+            return response(res, 404, "User not found");
+        }
+        return response(res, 200, "User authenticated", { user });
+    } catch (err) {
+        console.error(err);
+        return response(res, 500, "Server error");
+    }
+}
+const getAllUsers = async (req, res) => {
+    const loggedInUser = req.user.userId;
+    try {
+        const users = await User.find({ _id: { $ne: loggedInUser } }).select(
+            "username profilePicture lastSeen isOnline about phoneNumber phoneSuffix"
+        ).lean();
+
+        const usersWithConversation = await Promise.all(
+            users.map(async (user) => {
+                const conversation = await Conversation.findOne({
+                    participants: { $all: [loggedInUser, user?._id] }
+                }).populate({
+                    path: 'lastMessage',
+                    select: 'content createdAt sender receiver'
+                }).lean();
+
+                return {
+                    ...user,
+                    conversation: conversation || null
+                };
+            })
+        );
+
+        return response(res, 200, 'users retived successfully', usersWithConversation);
+    } catch (error) {
+        // error handling
+        console.error(error);
+        return response(res, 500, 'Server error');
+    }
+};
+module.exports = {sendOtp, verifyOtp, updateProfile, logout, checkAuthenticated, getAllUsers};
