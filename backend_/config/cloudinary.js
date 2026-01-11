@@ -5,6 +5,33 @@ Since JSON cannot represent binary file data, a different content type is used c
 Multer is middleware that parses multipart/form-data requests, extracts the binary file data and form fields, and converts them into a readable format for Express by attaching them to req.file, req.files, and req.body.*/
 
 // logic is to first upload the file to server's temp storage using multer and then from there upload to cloudinary then delete the temp file from server after successful/unsccfl upload to cloudinary
+
+/*
+User uploads 50MB video
+        ↓
+Step 1: Save to server temp storage (fast, local)
+        ↓
+HTTP request completes ✅ (user gets response quickly)
+        ↓
+Step 2: Server uploads to Cloudinary in background
+        ↓
+If fails → Server can retry without bothering user
+        ↓
+Delete temp file after success
+HTTP Request (multipart/form-data)
+        ↓
+Express Server receives raw binary data
+        ↓
+Multer INTERCEPTS (catches the request) 🛑
+        ↓
+Multer PARSES the data:
+  - Text fields → req.body ✅
+  - File data → req.file ✅
+        ↓
+Controller runs
+        ↓
+req.body = { senderId: '123', content: 'Hello!' } ✅
+req.file = { originalname: 'image.jpg', buffer: <...> } ✅*/
 const multer = require('multer');
 const cloudinary = require('cloudinary').v2;
 const fs = require('fs');

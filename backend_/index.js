@@ -8,6 +8,7 @@ const connectDB = require("./config/dbConnect")
 const redisClient = require("./config/redis");
 const bodyParser = require('body-parser');
 const authRouter = require("./routes/authRoute");
+const chatRouter = require("./routes/chatRoute");
 //Middlewares
 app.use(cors());
 app.use(cookieParser());// token to parse karega json data
@@ -16,7 +17,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 
 //routes
 app.use("/api/auth", authRouter);
-
+app.use("/api/chat",chatRouter);
 
 
 const PORT = process.env.PORT;

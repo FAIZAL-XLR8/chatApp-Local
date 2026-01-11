@@ -28,8 +28,8 @@ const MessageSchema = new mongoose.Schema({
     ],
     messageStatus : {
         type : String,
-        enum : ['sent','delivered','read'],
-        default : 'sent'
+        enum : ['send','delivered','read'],
+        default : 'send'
     }
 },{timestamps : true});
 const Message = mongoose.model('Message',MessageSchema);

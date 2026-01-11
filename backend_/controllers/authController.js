@@ -172,6 +172,7 @@ const getAllUsers = async (req, res) => {
                     path: 'lastMessage',
                     select: 'content createdAt sender receiver'
                 }).lean();
+                //lean to get plain JS object without mongoose methods .save() doesnt works but populate works without lean its mongoose document with methods lean makes docs into lesser size and faster
 
                 return {
                     ...user,
