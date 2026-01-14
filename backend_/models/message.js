@@ -20,7 +20,7 @@ const MessageSchema = new mongoose.Schema({
         enum : ['text','image','video'],
         default : 'text'
     },
-    reactions : [
+    reactions : [ //array of reactions for user : emoji objects
         {
             user : {type : mongoose.Schema.Types.ObjectId, ref : 'User'},
             emoji : {type : String} //like, love, laugh etc

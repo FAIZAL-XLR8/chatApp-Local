@@ -63,7 +63,12 @@ exports.sendMessage = async (req, res) => {
         const populatedMessage = await Message.findById(newMessage._id)
             .populate('sender', 'userName profilePicture')
             .populate('reciever', 'userName profilePicture');
-
+        if (req.io)
+        {
+            req.io.to(recieverId).emit("recieve-mesage", populatedMessage);
+            newMessage.messageStatus = 'delivered';
+            await newMessage.save();
+        }
         return response(res, 200, "Message sent successfully", { message: populatedMessage });
 
     } catch (error) {
@@ -122,34 +127,66 @@ exports.getMessages = async (req, res) => {
         res.status(500).json({ error: 'Internal Server Error' });
     }
 };
-
 exports.markAsRead = async (req, res) => {
     const { messageIds } = req.body;
     const userId = req.user.userId;
     try {
+        // Get relevant messages to determine senders
+        let messages = await Message.find({
+            _id: { $in: messageIds },
+            reciever: userId
+        });
+
+        // Update message status to 'read'
         await Message.updateMany(
             { _id: { $in: messageIds }, reciever: userId },
             { $set: { messageStatus: 'read' } }
         );
+
+        // Emit real-time notifications to senders
+        if (req.io) {
+            
+            for (const message of messages) {
+                // Notify the sender that their message has been read
+                const updatedMessage = {
+                _id : message._id,
+                messageStatus : "read"
+            };
+                req.io.to(message.sender.toString()).emit('message-read', updatedMessage);
+                
+            }
+        }
+
         return response(res, 200, "Messages marked as read successfully");
     } catch (error) {
         console.error('Mark as read error:', error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 };
-
 exports.deleteMessage = async (req, res) => {
     const messageId = req.params.messageId;
     const userId = req.user.userId;
     try {
         const message = await Message.findById(messageId);
+        
         if (!message) {
             return response(res, 404, "Message not found");
         }
+        
         if (message.sender.toString() !== userId) {
             return response(res, 403, "You can only delete your own messages");
         }
+        
+        // Delete the message
         await Message.findByIdAndDelete(messageId);
+        
+        // Emit real-time notification to receiver frontend
+        if (req.io) {
+            req.io.to(message.reciever.toString()).emit('message-deleted', 
+                messageId,
+              );
+        }
+        
         return response(res, 200, "Message deleted successfully");
     } catch (error) {
         console.error('Delete message error:', error);
