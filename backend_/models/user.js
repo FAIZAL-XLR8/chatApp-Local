@@ -1,16 +1,24 @@
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
-  phoneNumber: {
-    type: String,
-    unique: true,
-    sparse: true
-  },
+ phoneNumber: {
+  type: String,
+  unique: true,
+  sparse: true,
+  validate: {
+    validator: function(v) {
+      if (!v) return true;  // ✅ Allow null/undefined
+      return /^[0-9]{10,15}$/.test(v);
+    },
+    message: props => `${props.value} is not a valid phone number!`
+  }
+},
   phoneSuffix: {
     type: String,
   },
   userName: {
     type: String,
+
   },
   email: {
     type: String,
@@ -23,6 +31,7 @@ const userSchema = new mongoose.Schema({
       {
         validator: function(v) {
           // Basic email format validation
+            if (!v) return true;
           return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
         },
         message: props => `${props.value} is not a valid email!`
@@ -42,7 +51,7 @@ const userSchema = new mongoose.Schema({
   },
   about: {
     type: String,
-    default: "Hey there! I am using ZenChat."
+    default: "Hey there! I am using SyncTalk."
   },
   lastSeen: {
     type: Date,

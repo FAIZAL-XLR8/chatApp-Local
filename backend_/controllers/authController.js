@@ -49,9 +49,11 @@ const sendOtp = async (req, res) =>{
 const verifyOtp = async (req, res) => {
     const {phoneNumber, phoneSuffix, otp, email} = req.body;
     let user;
+     let data = "";
     try {
         if(email){
-            user = await User.findOne({ email: email });
+            user = await User.findOne({ email: email }); 
+            if(user.profilePicture != "") data = user;
             if (!user) {
                 return response(res, 400, "User not found");
             }
@@ -69,8 +71,10 @@ const verifyOtp = async (req, res) => {
             if (!phoneNumber || !phoneSuffix) {
                 return response(res, 400, "Phone number and suffix are required");
             }
+           
             const fullPhoneNumber = `${phoneSuffix}${phoneNumber}`;
-            user = await User.findOne({ phoneNumber: phoneNumber });
+            user = await User.findOne({ phoneNumber: phoneNumber , phoneSuffix});
+            if(user.profilePicture != "") data = user;
             if (!user) {
                 return response(res, 400, "User not found");
             }
@@ -89,8 +93,8 @@ const verifyOtp = async (req, res) => {
         maxAge : 7*24*60*60*1000, //7 days
        });
        console.log("JWT token generated and set in cookies for user:", user?._id);
-       return response(res, 200, "Otp  verified successfully", {
-       });
+       return response(res, 200, "success", 
+       data);
       
 
     } catch (err) {
@@ -161,7 +165,7 @@ const getAllUsers = async (req, res) => {
     const loggedInUser = req.user.userId;
     try {
         const users = await User.find({ _id: { $ne: loggedInUser } }).select(
-            "username profilePicture lastSeen isOnline about phoneNumber phoneSuffix"
+            "userName profilePicture lastSeen isOnline about phoneNumber phoneSuffix"
         ).lean();
 
         const usersWithConversation = await Promise.all(
