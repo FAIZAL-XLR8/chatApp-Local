@@ -12,7 +12,7 @@ const SideBar = () => {
     const location = useLocation();
     const {theme, setTheme} = useThemeStore();
     const {user} = useUserStore();
-    console.log(user);
+    
 
     const [isMobile, setIsMobile] = useState (window.innerWidth < 768);
 

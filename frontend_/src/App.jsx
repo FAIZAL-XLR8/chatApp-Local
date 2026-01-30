@@ -1,4 +1,4 @@
-import React from "react";
+import React, {useEffect} from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/user-login/login";
 import { ToastContainer } from "react-toastify";
@@ -9,7 +9,38 @@ import SettingSection from "./pages/settings/settingSection";
 import HomePage from "./components/homePage";
 import UserProfile from "./pages/user-profile/userProfile";
 import Status from "./pages/statusSection/Status"
+import useUserStore from "./store/useUserStore";
+import { disconnectSocket, initialiseSocket } from "./services/chatService";
+import { useChatStore } from "./store/chatStore";
 const App = () => {
+  const {user} = useUserStore();
+  const {setCurrentUser, cleanup} = useChatStore();
+  useEffect (()=>{
+     if (user?._id)
+  {
+    const socket = initialiseSocket();
+    if(socket)
+    {
+      setCurrentUser(user);
+      
+      // Initialize socket listeners when socket connects
+      socket.on("connect", () => {
+        useChatStore.getState().initialSocketListeners();
+      });
+      
+      // Also initialize immediately if already connected
+      if (socket.connected) {
+        useChatStore.getState().initialSocketListeners();
+      }
+    }
+  }
+  return () => {
+    cleanup();
+    disconnectSocket();
+    
+  }
+  },[user, setCurrentUser])
+ 
   return (
     <>
       <BrowserRouter>

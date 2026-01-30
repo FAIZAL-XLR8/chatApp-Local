@@ -7,9 +7,23 @@ const response = require('../utils/responseHandler');
 // sending a message from one user to another
 exports.sendMessage = async (req, res) => {
     try {
-        const { senderId, recieverId, content } = req.body; // Changed 'message' to 'content'
+        console.log('req.body:', req.body);
+        console.log('req.file:', req.file);
+        
+        const { senderId, receiverId, content } = req.body;
+
+        
+        // Add validation BEFORE creating participants array
+        if (!senderId || senderId === 'undefined') {
+            return res.status(400).json({ error: 'Invalid sender ID' });
+        }
+        
+        if (!receiverId || receiverId === 'undefined') {
+            return res.status(400).json({ error: 'Invalid receiver ID' });
+        }
+        // const { senderId, receiverId, content } = req.body; // Changed 'message' to 'content'
         const file = req.file;
-        const participants = [senderId, recieverId].sort();
+        const participants = [senderId, receiverId].sort();
 
         let conversation = await Conversation.findOne({
             participants: { $all: participants }
@@ -46,7 +60,7 @@ exports.sendMessage = async (req, res) => {
         const newMessage = new Message({
             conversation: conversation._id,
             sender: senderId,
-            reciever: recieverId,
+            receiver: receiverId,
             content,
             imageOrVideoUrl,
             contentType
@@ -62,10 +76,35 @@ exports.sendMessage = async (req, res) => {
 
         const populatedMessage = await Message.findById(newMessage._id)
             .populate('sender', 'userName profilePicture')
-            .populate('reciever', 'userName profilePicture');
+            .populate('receiver', 'userName profilePicture')
+            .populate('reactions.user', 'userName profilePicture');
+            console.log('📦 Populated Message Object:', JSON.stringify(populatedMessage, null, 2));
+console.log('📦 Message Fields:', {
+    _id: populatedMessage._id,
+    conversation: populatedMessage.conversation,
+    sender: populatedMessage.sender,
+    receiver: populatedMessage.receiver,
+    content: populatedMessage.content,
+    contentType: populatedMessage.contentType,
+    imageOrVideoUrl: populatedMessage.imageOrVideoUrl,
+    messageStatus: populatedMessage.messageStatus,
+    createdAt: populatedMessage.createdAt,
+    reactions: populatedMessage.reactions
+});
         if (req.io)
         {
-            req.io.to(recieverId).emit("recieve-mesage", populatedMessage);
+            // Extract IDs (handle both object and string formats)
+            const receiverIdStr = receiverId?.toString();
+            const senderIdStr = senderId?.toString();
+            
+            console.log(`📤 Emitting receive-message to receiver: ${receiverIdStr}, sender: ${senderIdStr}`);
+            
+            // Emit to receiver (all their devices)
+            req.io.to(receiverIdStr).emit("receive-message", populatedMessage);
+            
+            // Emit confirmation to sender (different event to avoid conflicts)
+            req.io.to(senderIdStr).emit("message-send", populatedMessage);
+            
             newMessage.messageStatus = 'delivered';
             await newMessage.save();
         }
@@ -110,11 +149,12 @@ exports.getMessages = async (req, res) => {
 
         const messages = await Message.find({ conversation: conversationId })
             .populate('sender', 'userName profilePicture')
-            .populate('reciever', 'userName profilePicture')
+            .populate('receiver', 'userName profilePicture')
+            .populate('reactions.user', 'userName profilePicture')
             .sort({ createdAt: 1 });
 
         await Message.updateMany(
-            { conversation: conversationId, reciever: userId, messageStatus: { $ne: 'read' } },
+            { conversation: conversationId, receiver: userId, messageStatus: { $ne: 'read' } },
             { $set: { messageStatus: 'read' } }
         );
 
@@ -134,12 +174,12 @@ exports.markAsRead = async (req, res) => {
         // Get relevant messages to determine senders
         let messages = await Message.find({
             _id: { $in: messageIds },
-            reciever: userId
+            receiver: userId
         });
 
         // Update message status to 'read'
         await Message.updateMany(
-            { _id: { $in: messageIds }, reciever: userId },
+            { _id: { $in: messageIds }, receiver: userId },
             { $set: { messageStatus: 'read' } }
         );
 
@@ -182,7 +222,7 @@ exports.deleteMessage = async (req, res) => {
         
         // Emit real-time notification to receiver frontend
         if (req.io) {
-            req.io.to(message.reciever.toString()).emit('message-deleted', 
+            req.io.to(message.receiver.toString()).emit('message-deleted', 
                 messageId,
               );
         }

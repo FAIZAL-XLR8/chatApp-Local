@@ -18,7 +18,7 @@ const HomePage = () => {
   useEffect (()=>{
     getUsers();
   },[])
-  console.log (allUsers);
+  
   return (
     <div>
       <Layout>

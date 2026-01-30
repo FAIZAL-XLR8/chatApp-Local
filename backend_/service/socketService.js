@@ -72,13 +72,32 @@ const initializeSocket = (server) => {
         
         //forward message to receiver if online
         socket.on("send-message", async(message) => {
+            console.log("📨 Received send-message via socket:", message);
             try{
+                // Extract receiver and sender IDs (handle both object and string formats)
+                const receiverId = message.receiver?._id || message.receiver;
+                const senderId = message.sender?._id || message.sender;
+                
+                if (!receiverId || !senderId) {
+                    console.error("❌ Missing receiver or sender ID in send-message");
+                    return;
+                }
+                
+                console.log(`📤 Forwarding message to receiver: ${receiverId}, sender: ${senderId}`);
+                
                 // Use room to emit to all devices of receiver
-                io.to(message.receiver).emit("receive-message", message);
+                io.to(receiverId.toString()).emit("receive-message", message);
+                // Also emit to sender for multi-device sync
+                io.to(senderId.toString()).emit("receive-message", message);
+                
+                console.log("✅ Message forwarded successfully");
             }
             catch(error){
-                console.error ("error sending message", error)
-                socket.emit("error-sending-message", {error: "error sending message from socket side", details: error.message});
+                console.error("❌ Error forwarding message via socket:", error);
+                socket.emit("error-sending-message", {
+                    error: "error sending message from socket side", 
+                    details: error.message
+                });
             }
         });
          
@@ -148,50 +167,57 @@ const initializeSocket = (server) => {
         });
 
         //Add a update of reaction
-        socket.on("add-reaction", async({messageId, emoji, userId, reactionUserId}) => {
-            try {
-                const message = await Message.findById(messageId);
-                if (!message) {
-                    socket.emit("error", { message: "Message not found" });
-                    return;
-                }
-                
-                //if an emoji already exists we find the idx of that and then update the reaction save to DB and then emit to both user(owner) of the message and the receiver
-                const existingIdx = message.reactions.findIndex(obj => obj.user.toString() === reactionUserId);
-                if (existingIdx > -1) {
-                    const existingReaction = message.reactions[existingIdx];
-                    if (existingReaction.emoji === emoji) {
-                        //remove the same emoji
-                        message.reactions.splice(existingIdx, 1);
-                    } else {
-                        message.reactions[existingIdx].emoji = emoji;
-                    }
-                } else {
-                    //add new reaction
-                    message.reactions.push({user: reactionUserId, emoji});
-                }
-                
-                await message.save();
-                
-                const populatedMessage = await Message.findById(message._id)
-                    .populate("sender", "userName profilePicture")
-                    .populate("receiver", "userName profilePicture")
-                    .populate("reactions.user", "userName");
-                    
-                const reactionUpdated = {
-                    messageId, 
-                    reactions: populatedMessage.reactions
-                };
-                
-                // Emit to all devices of both sender and receiver
-                io.to(populatedMessage.sender._id.toString()).emit("reaction-update", reactionUpdated);
-                io.to(populatedMessage.receiver._id.toString()).emit("reaction-update", reactionUpdated);
-            } catch (error) {
-                console.error("Error adding reaction:", error);
-                socket.emit("error", { message: "Failed to add reaction" });
-            }
-        });
-        
+        socket.on("add-reaction", async ({ messageId, emoji, reactionUserId }) => {
+      try {
+        const message = await Message.findById(messageId);
+        if (!message) {
+          socket.emit("error", { message: "Message not found" });
+          return;
+        }
+
+        // Check if user already reacted
+        const existingIdx = message.reactions.findIndex(
+          (r) => r.user.toString() === reactionUserId
+        );
+
+        if (existingIdx > -1) {
+          // Same emoji → remove reaction
+          if (message.reactions[existingIdx].emoji === emoji) {
+            message.reactions.splice(existingIdx, 1);
+          } else {
+            // Different emoji → update
+            message.reactions[existingIdx].emoji = emoji;
+          }
+        } else {
+          // New reaction
+          message.reactions.push({ user: reactionUserId, emoji });
+        }
+
+        await message.save();
+
+        // Populate message for frontend
+        const populatedMessage = await Message.findById(message._id)
+          .populate("sender", "userName profilePicture")
+          .populate("receiver", "userName profilePicture")
+          .populate("reactions.user", "userName");
+
+        const reactionUpdated = {
+          messageId,
+          reactions: populatedMessage.reactions,
+        };
+
+        // Emit to BOTH users (all their devices)
+        io.to(populatedMessage.sender._id.toString())
+          .emit("reaction-update", reactionUpdated);
+
+        io.to(populatedMessage.receiver._id.toString())
+          .emit("reaction-update", reactionUpdated);
+
+      } catch (error) {
+        console.error("Error adding reaction:", error);
+        socket.emit("error", { message: "Failed to add reaction" });
+      }
+    });
         // Handle user disconnection
         socket.on('disconnect', async () => {
             if(!userId) return;

@@ -7,13 +7,21 @@ const MessageSchema = new mongoose.Schema({
         type : mongoose.Schema.Types.ObjectId, ref : 'User', required : true
     }, //who sent this message
     content : {
-        type : String, required : true
+        type : String, 
+        required : function()
+        {
+            !this.imageOrVideoUrl;
+        }
     }, //the actual message content
-    reciever : {
+    receiver : {
         type : mongoose.Schema.Types.ObjectId, ref : 'User', required : true
-    }, //who is the reciever of this message
+    }, //who is the receiver of this message
     imageOrVideoUrl : {
-        type : String
+        type : String,
+        required : function ()
+        {
+            return !this.content;
+        }
     }, //if the message contains image or video along with message text thats why two seperate things content and images, store the URL here,
     contentType : {
         type : String,
