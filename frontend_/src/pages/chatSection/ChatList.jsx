@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import useLayoutStore from '../../store/layOutStore';
 import useThemeStore from '../../store/theme';
 import useUserStore from '../../store/useUserStore';
+import { useChatStore } from '../../store/chatStore';
 import { FaPlus, FaSearch, FaUserCircle } from 'react-icons/fa';
 import { motion } from "framer-motion";
 
@@ -13,6 +14,7 @@ const ChatList = ({ contacts }) => {
   const selectedContact = useLayoutStore((state) => state.selectedContact);
   const { theme } = useThemeStore();
   const { user } = useUserStore();
+  const conversations = useChatStore((state) => state.conversations);
   
   // State to trigger re-render for real-time timestamps
   const [currentTime, setCurrentTime] = useState(Date.now());
@@ -30,7 +32,41 @@ const ChatList = ({ contacts }) => {
   
   const [searchTerms, setSearchTerms] = useState("");
 
-  const filteredContacts = contacts?.filter((contact) => {
+  // Merge contacts with real-time conversations from chatStore
+  // This ensures lastMessage and unreadcount are always up-to-date
+  const contactsWithUpdatedConversations = useMemo(() => {
+    if (!contacts || !conversations?.data) return contacts;
+    
+    return contacts.map((contact) => {
+      // Find matching conversation from chatStore
+      const updatedConversation = conversations.data.find((conv) => {
+        return conv.participants?.some(
+          (participant) => participant._id === contact._id || participant._id?.toString() === contact._id?.toString()
+        );
+      });
+      
+      // If found, merge the updated conversation data
+      if (updatedConversation) {
+        return {
+          ...contact,
+          conversation: {
+            ...contact.conversation,
+            ...updatedConversation,
+            // Ensure we use the most recent lastMessage
+            lastMessage: updatedConversation.lastMessage || contact.conversation?.lastMessage,
+            // Use updated unreadcount
+            unreadcount: updatedConversation.unreadcount !== undefined 
+              ? updatedConversation.unreadcount 
+              : contact.conversation?.unreadcount
+          }
+        };
+      }
+      
+      return contact;
+    });
+  }, [contacts, conversations]);
+
+  const filteredContacts = contactsWithUpdatedConversations?.filter((contact) => {
     // Get display name (userName, phoneNumber, or _id)
     const displayName = contact?.userName || contact?.phoneNumber ||  contact?.email || contact?._id ;
     
@@ -124,14 +160,19 @@ const ChatList = ({ contacts }) => {
           filteredContacts.map((contact) => {
            
            
-           // Check if the last message was received by the current user
-           const lastMessageReceiverId = contact?.conversation?.lastMessage?.receiver || 
-                                         contact?.conversation?.lastMessage?.receiverId;
+           // Check if the last message sender is NOT the current user (message is from other user)
+           const lastMessageSenderId = contact?.conversation?.lastMessage?.sender?._id || 
+                                       contact?.conversation?.lastMessage?.sender || 
+                                       contact?.conversation?.lastMessage?.senderId;
+           const currentUserId = user?.user?._id || user?._id;
            
-           // Show unread count if receiver is the current user AND there are unread messages
+           // Show unread count if:
+           // 1. Conversation exists
+           // 2. Has unread messages (unreadcount > 0)
+           // 3. Last message is from other user (not current user)
            const hasUnreadMessages = contact?.conversation && 
-                                     contact?.conversation?.unreadcount > 0 && 
-                                     lastMessageReceiverId === user?._id;
+                                     (contact?.conversation?.unreadcount || contact?.conversation?.unreadCount || 0) > 0 && 
+                                     lastMessageSenderId !== currentUserId;
            
            return (
           
@@ -204,10 +245,10 @@ const ChatList = ({ contacts }) => {
                     {contact?.conversation?.lastMessage?.content || contact?.about || "No messages yet"}
                   </p>
 
-                  {/* Unread count badge - Only shows when receiver is current user */}
+                  {/* Unread count badge - Shows when there are unread messages from other users */}
                   {hasUnreadMessages && (
                     <span className="text-xs font-bold min-w-[20px] h-5 px-1.5 flex items-center justify-center bg-green-500 text-white rounded-full flex-shrink-0">
-                      {contact?.conversation?.unreadcount}
+                      {contact?.conversation?.unreadcount || contact?.conversation?.unreadCount || 0}
                     </span>
                   )}
                 </div>

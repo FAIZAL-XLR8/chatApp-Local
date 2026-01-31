@@ -78,12 +78,18 @@ socket.on("receive-message", (message) => {
         data: state.conversations.data.map((conv) => {
           const convId = conv._id?.toString();
           if (convId === normalizedMessageConvId || conv._id === messageConversationId) {
+            // Use unreadcount (lowercase) to match backend model
+            const currentUnreadCount = conv.unreadcount || conv.unreadCount || 0;
+            const isCurrentConversation = normalizedMessageConvId === normalizedCurrentConvId;
+            const messageSenderId = message.sender?._id || message.sender;
+            const isMessageFromCurrentUser = messageSenderId === currentUserId;
+            
             return {
               ...conv,
               lastMessage: message,
-              unreadCount: normalizedMessageConvId === normalizedCurrentConvId 
-                ? (conv.unreadCount || 0) 
-                : (conv.unreadCount || 0) + 1
+              unreadcount: isCurrentConversation || isMessageFromCurrentUser
+                ? 0  // Reset if viewing conversation or message is from current user
+                : currentUnreadCount + 1  // Increment if not viewing and message is from other user
             };
           }
           return conv;
@@ -405,6 +411,24 @@ fetchMessage : async (conversationId) =>{
             return dateA - dateB;
           });
           
+          // Update conversations to reset unread count for this conversation
+          let updatedConversations = state.conversations;
+          if (state.conversations?.data) {
+            updatedConversations = {
+              ...state.conversations,
+              data: state.conversations.data.map((conv) => {
+                const convId = conv._id?.toString();
+                if (convId === normalizedConvId || conv._id?.toString() === normalizedConvId) {
+                  return {
+                    ...conv,
+                    unreadcount: 0  // Reset unread count when opening conversation
+                  };
+                }
+                return conv;
+              })
+            };
+          }
+          
           console.log("🔄 Merged messages:", {
             existing: state.messages.length,
             new: newMessages.length,
@@ -414,6 +438,7 @@ fetchMessage : async (conversationId) =>{
           return {
             messages: sortedMessages,
             currentConversation: normalizedConvId, // Store as string for consistency
+            conversations: updatedConversations,
             loading: false
           };
         });
@@ -513,14 +538,40 @@ const optimisticMessage = {
     }
 
     // Replace the temp message with the real message from server
+    // Also update conversations list with new lastMessage
     set((state) => {
+      const messageConversationId = messageData.conversation?._id || messageData.conversation;
+      const normalizedConvId = messageConversationId?.toString();
+      
+      // Update conversations list with new lastMessage
+      let updatedConversations = state.conversations;
+      if (state.conversations?.data && normalizedConvId) {
+        updatedConversations = {
+          ...state.conversations,
+          data: state.conversations.data.map((conv) => {
+            const convId = conv._id?.toString();
+            if (convId === normalizedConvId || conv._id === messageConversationId) {
+              return {
+                ...conv,
+                lastMessage: messageData,
+                unreadcount: 0  // Reset unread count when current user sends a message
+              };
+            }
+            return conv;
+          })
+        };
+      }
+      
       // Find and replace temp message with real message from server
       const tempIndex = state.messages.findIndex(msg => msg._id === tempId);
       if (tempIndex !== -1) {
         const newMessages = [...state.messages];
         newMessages[tempIndex] = messageData;
         console.log("🔄 Replaced temp message with real message:", messageData._id);
-        return { messages: newMessages };
+        return { 
+          messages: newMessages,
+          conversations: updatedConversations
+        };
       }
       
       // If temp message not found, check if message already exists
@@ -531,13 +582,17 @@ const optimisticMessage = {
         return {
           messages: state.messages.map(msg => 
             msg._id === messageData._id ? messageData : msg
-          )
+          ),
+          conversations: updatedConversations
         };
       }
       
       // Add message if it doesn't exist
       console.log("➕ Adding new message:", messageData._id);
-      return { messages: [...state.messages, messageData] };
+      return { 
+        messages: [...state.messages, messageData],
+        conversations: updatedConversations
+      };
     });
 
     return messageData;
@@ -575,9 +630,9 @@ const optimisticMessage = {
             return {
                 ...conv,
                 lastMessage: message,
-                unreadCount: message?.receiver?._id === currentUser?._id
-                    ? (conv.unreadCount || 0) + 1
-                    : conv.unreadCount || 0
+                unreadcount: message?.receiver?._id === currentUser?._id
+                    ? ((conv.unreadcount || conv.unreadCount || 0) + 1)
+                    : (conv.unreadcount || conv.unreadCount || 0)
             }
         }
         return conv;
