@@ -45,7 +45,7 @@ export const initialiseSocket = () => {
     }, 100);
   });
 
-  // 🔥 CRITICAL: Re-emit user-connected on reconnect
+  
   socket.on("reconnect", () => {
     console.log("🔄 Socket reconnected");
     const user = useUserState.getState().user;

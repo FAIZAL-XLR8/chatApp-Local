@@ -1,6 +1,7 @@
 const Conversation = require('../models/Conversation');
 const { uploadFileToCloudinary } = require('../config/cloudinary');
 const Message = require('../models/message');
+const { generateSummary } = require('../utils/aiService');
 
 const response = require('../utils/responseHandler');
 
@@ -9,15 +10,15 @@ exports.sendMessage = async (req, res) => {
     try {
         console.log('req.body:', req.body);
         console.log('req.file:', req.file);
-        
+
         const { senderId, receiverId, content } = req.body;
 
-        
+
         // Add validation BEFORE creating participants array
         if (!senderId || senderId === 'undefined') {
             return res.status(400).json({ error: 'Invalid sender ID' });
         }
-        
+
         if (!receiverId || receiverId === 'undefined') {
             return res.status(400).json({ error: 'Invalid receiver ID' });
         }
@@ -71,42 +72,50 @@ exports.sendMessage = async (req, res) => {
         if (content || imageOrVideoUrl) {
             conversation.lastMessage = newMessage._id;
         }
-        conversation.unreadcount += 1;
-        await conversation.save();
+        // Check if receiver is online to mark as delivered
+        const receiverIdStr = receiverId?.toString();
+        const isReceiverOnline = req.socketUserMap?.has(receiverIdStr) && req.socketUserMap.get(receiverIdStr).length > 0;
+
+        if (isReceiverOnline) {
+            newMessage.messageStatus = 'delivered';
+        }
+
+        await newMessage.save();
 
         const populatedMessage = await Message.findById(newMessage._id)
             .populate('sender', 'userName profilePicture')
             .populate('receiver', 'userName profilePicture')
             .populate('reactions.user', 'userName profilePicture');
-            console.log('📦 Populated Message Object:', JSON.stringify(populatedMessage, null, 2));
-console.log('📦 Message Fields:', {
-    _id: populatedMessage._id,
-    conversation: populatedMessage.conversation,
-    sender: populatedMessage.sender,
-    receiver: populatedMessage.receiver,
-    content: populatedMessage.content,
-    contentType: populatedMessage.contentType,
-    imageOrVideoUrl: populatedMessage.imageOrVideoUrl,
-    messageStatus: populatedMessage.messageStatus,
-    createdAt: populatedMessage.createdAt,
-    reactions: populatedMessage.reactions
-});
-        if (req.io)
-        {
-            // Extract IDs (handle both object and string formats)
-            const receiverIdStr = receiverId?.toString();
+        console.log('📦 Populated Message Object:', JSON.stringify(populatedMessage, null, 2));
+        console.log('📦 Message Fields:', {
+            _id: populatedMessage._id,
+            conversation: populatedMessage.conversation,
+            sender: populatedMessage.sender,
+            receiver: populatedMessage.receiver,
+            content: populatedMessage.content,
+            contentType: populatedMessage.contentType,
+            imageOrVideoUrl: populatedMessage.imageOrVideoUrl,
+            messageStatus: populatedMessage.messageStatus,
+            createdAt: populatedMessage.createdAt,
+            reactions: populatedMessage.reactions
+        });
+        if (req.io) {
             const senderIdStr = senderId?.toString();
-            
+
             console.log(`📤 Emitting receive-message to receiver: ${receiverIdStr}, sender: ${senderIdStr}`);
-            
+
             // Emit to receiver (all their devices)
             req.io.to(receiverIdStr).emit("receive-message", populatedMessage);
-            
-            // Emit confirmation to sender (different event to avoid conflicts)
+
+            // Emit confirmation to sender 
             req.io.to(senderIdStr).emit("message-send", populatedMessage);
-            
-            newMessage.messageStatus = 'delivered';
-            await newMessage.save();
+
+            // We already saved the status above, so no need to save again here
+            // But if we want to support dynamic delivery updates if logic changes, we can emit status update
+            if (isReceiverOnline) {
+                // Explicitly ensure sender gets the update if they listened to message-status-update
+                // although message-send usually handles the optimistic update
+            }
         }
         return response(res, 200, "Message sent successfully", { message: populatedMessage });
 
@@ -183,19 +192,30 @@ exports.markAsRead = async (req, res) => {
             { $set: { messageStatus: 'read' } }
         );
 
-        // Emit real-time notifications to senders
-        if (req.io) {
-            
-            for (const message of messages) {
-                // Notify the sender that their message has been read
-                const updatedMessage = {
-                _id : message._id,
-                messageStatus : "read"
-            };
-                req.io.to(message.sender.toString()).emit('message-read', updatedMessage);
-                
-            }
+        if (req.io && messages.length > 0) {
+            const senderIds = [...new Set(messages.map(m => m.sender.toString()))];
+
+            senderIds.forEach(senderId => {
+                req.io.to(senderId).emit("messages-read", {
+                    messageIds,
+                    messageStatus: "read"
+                });
+            });
         }
+
+        // // Emit real-time notifications to senders
+        // if (req.io) {
+
+        //     for (const message of messages) {
+        //         // Notify the sender that their message has been read
+        //         const updatedMessage = {
+        //         _id : message._id,
+        //         messageStatus : "read"
+        //     };
+        //         req.io.to(message.sender.toString()).emit('message-read', updatedMessage);
+
+        //     }
+        // }
 
         return response(res, 200, "Messages marked as read successfully");
     } catch (error) {
@@ -207,29 +227,83 @@ exports.deleteMessage = async (req, res) => {
     const messageId = req.params.messageId;
     const userId = req.user.userId;
     try {
+        // Validate ObjectId format to prevent CastError for temporary IDs
+        const mongoose = require('mongoose');
+        if (!mongoose.Types.ObjectId.isValid(messageId)) {
+            return response(res, 400, "Invalid message ID - cannot delete temporary messages");
+        }
+
         const message = await Message.findById(messageId);
-        
+
         if (!message) {
             return response(res, 404, "Message not found");
         }
-        
+
         if (message.sender.toString() !== userId) {
             return response(res, 403, "You can only delete your own messages");
         }
-        
+
         // Delete the message
         await Message.findByIdAndDelete(messageId);
-        
+
         // Emit real-time notification to receiver frontend
         if (req.io) {
-            req.io.to(message.receiver.toString()).emit('message-deleted', 
+            req.io.to(message.receiver.toString()).emit('message-deleted',
                 messageId,
-              );
+            );
         }
-        
+
         return response(res, 200, "Message deleted successfully");
     } catch (error) {
         console.error('Delete message error:', error);
         res.status(500).json({ error: 'Internal Server Error' });
+    }
+};
+
+// AI Summarization logic
+exports.summarizeMessages = async (req, res) => {
+    const { conversationId } = req.params;
+    const userId = req.user.userId;
+
+    const mongoose = require('mongoose');
+
+    // Validate ObjectId to prevent CastError
+    if (!mongoose.Types.ObjectId.isValid(conversationId)) {
+        return response(res, 400, "Invalid conversation ID format");
+    }
+
+    try {
+        const conversation = await Conversation.findById(conversationId);
+        if (!conversation) {
+            return response(res, 404, "Conversation not found");
+        }
+
+        // Use some with toString() for reliable comparison
+        const isParticipant = conversation.participants.some(p => p.toString() === userId.toString());
+        if (!isParticipant) {
+            return response(res, 403, "Access denied to this conversation");
+        }
+
+        // Fetch the last 5 messages for token usage optimization as requested by the user
+        const messages = await Message.find({ conversation: conversationId })
+            .populate('sender', 'userName')
+            .sort({ createdAt: -1 })
+            .limit(5);
+
+        if (messages.length === 0) {
+            return response(res, 400, "No messages to summarize");
+        }
+
+        // Reverse to get chronological order for the AI
+        const summary = await generateSummary(messages.reverse());
+
+        return response(res, 200, "Summary generated successfully", { summary });
+    } catch (error) {
+        console.error('Summarize messages error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Internal Server Error',
+            details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
     }
 };

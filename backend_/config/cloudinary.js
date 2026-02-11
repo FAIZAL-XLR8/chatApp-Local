@@ -35,32 +35,44 @@ req.file = { originalname: 'image.jpg', buffer: <...> } ✅*/
 const multer = require('multer');
 const cloudinary = require('cloudinary').v2;
 const fs = require('fs');
-cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET
-});
-const uploadFileToCloudinary = async (file) => {
-  const options = {
-    resource_type: file.mimetype.startsWith('video') ? 'video' : 'image',
-  }
+const path = require('path');
 
-  try {
-    const uploader = file.mimetype.startsWith('video') 
-      ? cloudinary.uploader.upload_large 
-      : cloudinary.uploader.upload;
-    
-    const result = await uploader(file.path, options);
-    
-    return result;
-    
-  } catch (error) {
-    throw error;
-    
-  } finally {
-    //delete the temporary video fromthe server
-    fs.unlink(file.path, () => {});
-  }
+cloudinary.config({
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+        api_key: process.env.CLOUDINARY_API_KEY,
+        api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+const uploadFileToCloudinary = async (file) => {
+        const options = {
+                resource_type: 'auto',
+        };
+
+        try {
+                const absolutePath = path.resolve(file.path);
+
+                // Use upload_large only for files > 90MB to be safe
+                const uploader = file.size > 90 * 1024 * 1024
+                        ? cloudinary.uploader.upload_large
+                        : cloudinary.uploader.upload;
+
+                console.log(`Uploading ${file.mimetype} (${file.size} bytes) from ${absolutePath}`);
+
+                const result = await uploader(absolutePath, options);
+
+                return result;
+
+        } catch (error) {
+                console.error("Cloudinary Upload Error:", error);
+                throw error;
+
+        } finally {
+                //delete the temporary video fromthe server
+                // Check if file exists before unlinking to avoid ENOENT in finally block
+                if (fs.existsSync(file.path)) {
+                        fs.unlink(file.path, () => { });
+                }
+        }
 };
 const multerMiddleware = multer({ dest: 'uploads/' }).single('media');
 module.exports = { uploadFileToCloudinary, multerMiddleware };

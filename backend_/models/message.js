@@ -10,7 +10,7 @@ const MessageSchema = new mongoose.Schema({
         type : String, 
         required : function()
         {
-            !this.imageOrVideoUrl;
+            return !this.imageOrVideoUrl;
         }
     }, //the actual message content
     receiver : {
@@ -36,8 +36,8 @@ const MessageSchema = new mongoose.Schema({
     ],
     messageStatus : {
         type : String,
-        enum : ['send','delivered','read'],
-        default : 'send'
+        enum : ['sent','delivered','read'],
+        default : 'sent'
     }
 },{timestamps : true});
 const Message = mongoose.model('Message',MessageSchema);

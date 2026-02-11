@@ -1,6 +1,6 @@
 const express = require('express');
 const chatController = require('../controllers/chatController');
-const {authMiddleware} = require('../middleware/authMiddleware');
+const { authMiddleware } = require('../middleware/authMiddleware');
 const { multerMiddleware } = require('../config/cloudinary');
 
 const chatRouter = express.Router();
@@ -34,6 +34,12 @@ chatRouter.delete(
   '/messages/:messageId',
   authMiddleware,
   chatController.deleteMessage
+);
+
+chatRouter.get(
+  '/summarize/:conversationId',
+  authMiddleware,
+  chatController.summarizeMessages
 );
 
 module.exports = chatRouter;
